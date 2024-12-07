@@ -209,3 +209,113 @@ with mp_hands.Hands(
                     last_stop_sign_x = current_stop_sign_x
                 else:
                     last_stop_sign_x = None  # Reset when not using Stop Sign Gesture
+                    
+                if gesture_name == "Move Gesture":
+                    prev_x, prev_y = smooth_x, smooth_y
+
+                elif gesture_name == "Click Gesture" and (time.time() - last_click_time > click_cooldown):
+                    last_click_time = time.time()
+                    # Check if a button is clicked
+                    for button in button_positions:
+                        dist = math.hypot(smooth_x - button['x'], smooth_y - button['y'])
+                        if dist <= button['radius']:
+                            letter = button['letter']
+                            if letter == 'Space':
+                                typed_text += ' '
+                            elif letter == 'Del':
+                                typed_text = typed_text[:-1]
+                            elif letter == 'Enter':
+                                typed_text += '\n'
+                            elif letter == 'Clear':
+                                typed_text = ''
+                            elif letter == 'Close':
+                                running = False
+                            else:
+                                typed_text += letter
+                            print(f"Button '{letter}' clicked!")
+                            break
+
+                elif gesture_name == "Scroll Gesture":
+                    if not scroll_active:
+                        scroll_active = True
+                        scroll_start_y = smooth_y
+                    else:
+                        dy = smooth_y - scroll_start_y
+                        if dy < -15:  # Scroll Up
+                            if current_group_index > 0:
+                                current_group_index -= 1
+                                print("Scrolled Up")
+                            scroll_start_y = smooth_y
+                        elif dy > 15:  # Scroll Down
+                            if current_group_index < len(letter_groups) - 1:
+                                current_group_index += 1
+                                print("Scrolled Down")
+                            scroll_start_y = smooth_y
+                else:
+                    scroll_active = False
+        else:
+            scroll_active = False
+
+        # Create a blank image for the interface
+        interface = np.ones((screen_height, screen_width, 3), dtype=np.uint8) * 200
+
+        # Draw circular keyboard on the interface
+        center_x = interface.shape[1] // 2
+        center_y = interface.shape[0] // 2 + 100  # Adjusted as needed
+        radius = 300  # Radius of the circle where buttons are placed
+
+        current_letters = letter_groups[current_group_index]
+        cursor_pos = (int(prev_x), int(prev_y))
+
+        button_positions = []
+
+        # Draw letters around the circle
+        n = len(current_letters)
+        angle_step = 2 * math.pi / n
+        button_radius = 60  # Radius of each button
+
+        for i in range(n):
+            angle = i * angle_step - math.pi / 2  # Start from the top
+            x = int(center_x + radius * math.cos(angle))
+            y = int(center_y + radius * math.sin(angle))
+
+            # Check if cursor is over the button
+            dist_to_cursor = math.hypot(cursor_pos[0] - x, cursor_pos[1] - y)
+            is_hovered = dist_to_cursor <= button_radius
+
+            # Get button image
+            button_image = get_button_image(current_letters[i], button_radius, is_hovered)
+            # Overlay button image on interface
+            y1, y2 = y - button_radius, y + button_radius
+            x1, x2 = x - button_radius, x + button_radius
+
+            # Ensure the coordinates are within the interface boundaries
+            y1_clipped = max(0, y1)
+            y2_clipped = min(interface.shape[0], y2)
+            x1_clipped = max(0, x1)
+            x2_clipped = min(interface.shape[1], x2)
+
+            button_y1 = int(y1_clipped - y1)
+            button_y2 = int(y2_clipped - y1)
+            button_x1 = int(x1_clipped - x1)
+            button_x2 = int(x2_clipped - x1)
+
+            if y1_clipped < y2_clipped and x1_clipped < x2_clipped:
+                try:
+                    alpha_s = button_image[button_y1:button_y2, button_x1:button_x2, 3] / 255.0
+                    alpha_l = 1.0 - alpha_s
+                    for c in range(3):
+                        interface[int(y1_clipped):int(y2_clipped), int(x1_clipped):int(x2_clipped), c] = (
+                            alpha_s * button_image[button_y1:button_y2, button_x1:button_x2, c] +
+                            alpha_l * interface[int(y1_clipped):int(y2_clipped), int(x1_clipped):int(x2_clipped), c]
+                        )
+                except Exception as e:
+                    print(f"Error overlaying button image: {e}")
+
+            # Store button position for hit testing
+            button_positions.append({
+                'x': x,
+                'y': y,
+                'radius': button_radius,
+                'letter': current_letters[i]
+            })
