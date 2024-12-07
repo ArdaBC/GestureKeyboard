@@ -96,8 +96,8 @@ def detect_gesture(hand_landmarks):
         index_extended = is_finger_extended(index_tip, index_pip)
         middle_extended = is_finger_extended(middle_tip, middle_pip)
         ring_extended = is_finger_extended(ring_tip, ring_pip)
-        pinky_extended = is_finger_extended(pinky_tip, pinky_pip)
-                                            if thumb_extended and index_extended and middle_extended and ring_extended and pinky_extended:
+        pinky_extended = is_finger_extended(pinky_tip, pinky_pip)
+        if thumb_extended and index_extended and middle_extended and ring_extended and pinky_extended:
             return "Stop Sign Gesture"
 
         # Scroll Gesture: index and middle fingers extended, others not extended
@@ -431,5 +431,4 @@ with mp_hands.Hands(
             break
 
     cap.release()
-
     cv2.destroyAllWindows()
