@@ -319,3 +319,117 @@ with mp_hands.Hands(
                 'radius': button_radius,
                 'letter': current_letters[i]
             })
+        # Draw special buttons in the center
+        num_special_buttons = len(special_buttons)
+        special_radius = 120  # Radius from center for special buttons
+        angle_step_special = 2 * math.pi / num_special_buttons
+        button_radius_special = 50
+
+        for i in range(num_special_buttons):
+            angle = i * angle_step_special - math.pi / 2  # Start from the top
+            x = int(center_x + special_radius * math.cos(angle))
+            y = int(center_y + special_radius * math.sin(angle))
+
+            # Check if cursor is over the button
+            dist_to_cursor = math.hypot(cursor_pos[0] - x, cursor_pos[1] - y)
+            is_hovered = dist_to_cursor <= button_radius_special
+
+            # Get button image
+            button_image = get_button_image(special_buttons[i], button_radius_special, is_hovered, is_special=True)
+            # Overlay button image on interface
+            y1, y2 = y - button_radius_special, y + button_radius_special
+            x1, x2 = x - button_radius_special, x + button_radius_special
+
+            # Ensure the coordinates are within the interface boundaries
+            y1_clipped = max(0, y1)
+            y2_clipped = min(interface.shape[0], y2)
+            x1_clipped = max(0, x1)
+            x2_clipped = min(interface.shape[1], x2)
+
+            button_y1 = int(y1_clipped - y1)
+            button_y2 = int(y2_clipped - y1)
+            button_x1 = int(x1_clipped - x1)
+            button_x2 = int(x2_clipped - x1)
+
+            if y1_clipped < y2_clipped and x1_clipped < x2_clipped:
+                try:
+                    alpha_s = button_image[button_y1:button_y2, button_x1:button_x2, 3] / 255.0
+                    alpha_l = 1.0 - alpha_s
+                    for c in range(3):
+                        interface[int(y1_clipped):int(y2_clipped), int(x1_clipped):int(x2_clipped), c] = (
+                            alpha_s * button_image[button_y1:button_y2, button_x1:button_x2, c] +
+                            alpha_l * interface[int(y1_clipped):int(y2_clipped), int(x1_clipped):int(x2_clipped), c]
+                        )
+                except Exception as e:
+                    print(f"Error overlaying special button image: {e}")
+
+            # Store button position for hit testing
+            button_positions.append({
+                'x': x,
+                'y': y,
+                'radius': button_radius_special,
+                'letter': special_buttons[i]
+            })
+
+        # Convert interface to PIL image once for all text drawing
+        interface_pil = Image.fromarray(interface.astype('uint8'), 'RGB')
+        draw = ImageDraw.Draw(interface_pil)
+
+        # Display typed text area with background
+        text_area_height = 150
+        draw.rectangle([50, 50, interface.shape[1] - 50, 50 + text_area_height], fill=(240, 240, 240))
+
+        # Draw typed text
+        start_y = 60
+        line_height = 30
+        text_lines = typed_text.split('\n')[-max_lines:]
+        for idx, line in enumerate(text_lines):
+            position = (60, start_y + idx * line_height)
+            draw.text(position, line, font=font_small, fill=(0, 0, 0))
+
+        # Display gesture name at the bottom center
+        gesture_position = (interface.shape[1] // 2 - 200, interface.shape[0] - 50)
+        draw.text(gesture_position, f"Gesture: {gesture_name}", font=font_medium, fill=(255, 0, 0))
+
+        # Display current group info
+        group_info = f"Group {current_group_index + 1}/{len(letter_groups)}: {''.join(current_letters)}"
+        group_position = (50, interface.shape[0] - 80)
+        draw.text(group_position, group_info, font=font_small, fill=(0, 0, 255))
+
+        # Convert back to OpenCV image
+        interface = np.array(interface_pil)
+
+        # Draw enhanced cursor using OpenCV
+        try:
+            cv2.circle(interface, (int(prev_x), int(prev_y)), 25, (255, 0, 0), 2)  # Outer circle
+            cv2.circle(interface, (int(prev_x), int(prev_y)), 10, (255, 0, 0), -1)  # Inner circle
+        except Exception as e:
+            print(f"Error drawing cursor: {e}")
+
+        # Resize camera feed and place it at the top right corner
+        frame_resized = cv2.resize(frame, (320, 240))
+        interface[0:240, interface.shape[1] - 320:interface.shape[1]] = frame_resized
+
+        # Display the interface
+        cv2.imshow('Circular Hand Gesture Keyboard', interface)
+
+        # Limit frame rate to 30 FPS
+        elapsed_time = time.time() - start_time
+        wait_time = max(1, int((1 / 30 - elapsed_time) * 1000))
+        key = cv2.waitKey(wait_time) & 0xFF
+
+        # Toggle fullscreen on 'f' key press
+        if key == ord('f'):
+            fullscreen = not fullscreen
+            if fullscreen:
+                cv2.setWindowProperty('Circular Hand Gesture Keyboard', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            else:
+                cv2.setWindowProperty('Circular Hand Gesture Keyboard', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+
+        # Break loop on 'q' key press
+        elif key == ord('q'):
+            break
+
+    cap.release()
+
+    cv2.destroyAllWindows()
