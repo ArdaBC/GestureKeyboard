@@ -97,3 +97,115 @@ def detect_gesture(hand_landmarks):
         middle_extended = is_finger_extended(middle_tip, middle_pip)
         ring_extended = is_finger_extended(ring_tip, ring_pip)
         pinky_extended = is_finger_extended(pinky_tip, pinky_pip)
+                                            if thumb_extended and index_extended and middle_extended and ring_extended and pinky_extended:
+            return "Stop Sign Gesture"
+
+        # Scroll Gesture: index and middle fingers extended, others not extended
+        if index_extended and middle_extended and not ring_extended and not pinky_extended:
+            return "Scroll Gesture"
+
+        # Click Gesture: thumb and index finger close
+        distance_thumb_index = math.hypot(index_tip.x - thumb_tip.x, index_tip.y - thumb_tip.y)
+        if distance_thumb_index < 0.04:  # Adjust threshold as necessary
+            return "Click Gesture"
+
+        # Move Gesture: only index finger extended
+        if index_extended and not middle_extended and not ring_extended and not pinky_extended:
+            return "Move Gesture"
+
+        return "Unknown Gesture"
+    except Exception as e:
+        print(f"Error in gesture detection: {e}")
+        return "Unknown Gesture"
+
+
+# Initialize webcam feed
+cap = cv2.VideoCapture(0)
+# Set the camera resolution
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+prev_x, prev_y = screen_width // 2, screen_height // 2
+smoothing_factor = 0.2
+last_click_time = 0
+click_cooldown = 1  # Cooldown in seconds
+
+scroll_active = False
+scroll_start_y = None
+
+running = True  # Flag to control the main loop
+
+# Variables to manage fullscreen toggle
+fullscreen = False
+
+# Create the OpenCV window
+cv2.namedWindow('Circular Hand Gesture Keyboard', cv2.WINDOW_NORMAL)
+
+with mp_hands.Hands(
+    model_complexity=1,
+    max_num_hands=1,
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.7) as hands:
+
+    last_stop_sign_x = None  # Track the x-position of the hand for Stop Sign Gesture
+    horizontal_scroll_threshold = 0.03  # Adjust threshold for normalized x-axis movement
+
+    while running:
+        start_time = time.time()
+        success, frame = cap.read()
+        if not success:
+            print("Ignoring empty camera frame.")
+            continue
+
+        frame = cv2.flip(frame, 1)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame_height, frame_width, _ = frame.shape
+
+        # Process hand landmarks
+        results = hands.process(frame_rgb)
+        gesture_name = "Unknown Gesture"
+
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
+                # Draw hand landmarks on the camera feed
+                mp_drawing.draw_landmarks(
+                    frame,
+                    hand_landmarks,
+                    mp_hands.HAND_CONNECTIONS
+                )
+
+                gesture_name = detect_gesture(hand_landmarks)
+
+                index_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+
+                x_norm = index_tip.x
+                y_norm = index_tip.y
+
+                screen_x = int(x_norm * screen_width)
+                screen_y = int(y_norm * screen_height)
+
+                smooth_x = prev_x + (screen_x - prev_x) * smoothing_factor
+                smooth_y = prev_y + (screen_y - prev_y) * smoothing_factor
+
+                if gesture_name == "Stop Sign Gesture":
+                    # Track horizontal movement for scrolling
+                    current_stop_sign_x = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST].x  # Use wrist for x-coordinate
+
+                    if last_stop_sign_x is not None:
+                        dx = current_stop_sign_x - last_stop_sign_x
+                        if dx > horizontal_scroll_threshold:  # Scroll Right
+                            if caps_lock_enabled:
+                                caps_lock_enabled = False
+                                letter_groups = [[letter.lower() for letter in group] for group in letter_groups]
+                                print("Caps Lock OFF: Letters are now lowercase")
+                                print("Stop Sign: Scrolled Right")
+                        elif dx < -horizontal_scroll_threshold:  # Scroll Left
+                            if not caps_lock_enabled:   
+                                caps_lock_enabled = True
+                                letter_groups = [[letter.upper() for letter in group] for group in letter_groups]
+                                print("Caps Lock ON: Letters are now uppercase")
+                                print("Stop Sign: Scrolled Left")
+
+                    last_stop_sign_x = current_stop_sign_x
+                else:
+                    last_stop_sign_x = None  # Reset when not using Stop Sign Gesture
